@@ -1,0 +1,182 @@
+#!/bin/bash
+
+#
+# Cleans up repo before git merge:
+# - modified files that are the same with the merge branch are reverted to the state from current commit
+#   i.e. git checkout the_file
+# - untracked files that exist in the merge branch and are the same are removed
+#
+# Optional parameters:
+# --pretend - list actions that would be performed, but do nothing
+# --debug - display debugging info
+
+# Default options
+OPT_PRETEND="false"
+OPT_DEBUG="false"
+OPT_BRANCH=""
+
+function debug_msg() {
+	if [ "${OPT_DEBUG}" != "true" ]; then
+		return
+	fi
+	echo -e "$1"
+}
+
+function msg_info() {
+    echo -e "[I] Info: $1"
+}
+
+function msg_error() {
+    echo -e "[E] Erorr: $1"
+}
+
+function revert_file() {
+	local FILE="$1"
+	
+	echo "[C] Identical with remote, checking out ${FILE}"
+	if [ "${OPT_PRETEND}" == "false" ]; then
+		git checkout "${FILE}"
+	fi
+}
+
+function warn_hash_differ() {
+	local FILE="$1"
+	local LOCAL_HASH="$2"
+	local REMOTE_HASH="$3"
+
+	echo "[!] Hashes differ for ${FILE} local: ${LOCAL_HASH} remote: ${REMOTE_HASH}"
+}
+
+function remove_untracked_file() {
+	local FILE="$1"
+
+        echo "[R] Untracked file found and identical with remote tip, removing: ${FILE}"
+	if [ "${OPT_PRETEND}" == "false" ]; then
+		rm -f "${FILE}"
+	fi
+}
+
+function handle_file() {
+	local FILE="$1"
+	local FILE_TYPE="$2"
+	local REMOTE_BRANCH_FILE="${REMOTE_BRANCH}:${FILE}"
+	
+	debug_msg "REMOTE_BRANCH_FILE: $REMOTE_BRANCH_FILE"
+	
+	# We need to capture output and exit status, "local" will always return 0
+	local REMOTE_FILE_HASH
+	REMOTE_FILE_HASH=$( git rev-parse "${REMOTE_BRANCH_FILE}" 2>/dev/null )
+	
+	# Handle errors, like file not found
+	if [ "$?" -eq 128 ]; then
+		# if this is untracked file then that's expected and we can just quit
+		if [ "${FILE_TYPE}" == "untracked" ]; then
+		    debug_msg "Got error 128 on untracked file, this is expected. Skiping the file '$FILE'"
+		    return
+		fi
+		msg_error "[E] Error, file not found maybe? ${FILE}"
+		return
+	fi
+
+	local FILE_HASH=$( git hash-object "${FILE}" )
+	
+	if [ "${FILE_HASH}" == "${REMOTE_FILE_HASH}" ]; then
+		if [ "${FILE_TYPE}" == "untracked" ]; then
+		    remove_untracked_file "${FILE}"
+		else
+		    revert_file "${FILE}"
+		fi
+	else
+		warn_hash_differ "${FILE}" "${FILE_HASH}" "${REMOTE_FILE_HASH}"
+	fi
+}
+
+function git_ref_exist() {
+    git show-ref --verify --quiet "refs/$1"
+    
+    if [ "$?" -eq 0 ]; then
+	echo "true";
+    else
+	echo "false";
+    fi
+}
+
+function branch_exist() {
+    local BRANCH="$1"
+    
+    # Check for local and remote branches
+    if [ $( git_ref_exist "heads/$BRANCH" ) = "true" ]; then
+	echo "true";
+    elif [ $( git_ref_exist "remotes/$BRANCH" ) = "true" ]; then
+	echo "true"
+    else
+	echo "false";
+    fi
+}
+
+# Parse options
+for param in "$@"; do
+    case "$param" in
+	-p|--pretend)
+	    OPT_PRETEND="true"
+	    shift
+	;;
+	--debug)
+	    OPT_DEBUG="true"
+	    shift
+	;;
+	-*|--*)
+	    msg_error "Unknown parameter '$param'"
+	    exit 128
+	;;
+	*)
+	    if [ ! -z "$OPT_BRANCH" ]; then
+		msg_error "Too many arguments, this command accepts one optional parameter - branch name, but already got that: $OPT_BRANCH"
+		exit 128
+	    fi
+	    OPT_BRANCH="$param"
+	    debug_msg "Got branch name from command line: '$OPT_BRANCH'"
+	    shift
+	;;
+    esac
+done
+
+# First, get remote tracking branch
+LOCAL_BRANCH=$( git rev-parse --abbrev-ref HEAD )
+debug_msg "Local branch: '$LOCAL_BRANCH'"
+
+if [ -z "$OPT_BRANCH" ]; then
+    debug_msg "Detecting branch name as it hasn't been provided on cmd line"
+    REMOTE_NAME=$( git remote show )
+    debug_msg "REMOTE_NAME: $REMOTE_NAME"
+
+    # Todo: this is not always true!
+    REMOTE_BRANCH="${REMOTE_NAME}/${LOCAL_BRANCH}"
+else
+    REMOTE_BRANCH="$OPT_BRANCH"
+fi
+
+debug_msg "REMOTE_BRANCH: $REMOTE_BRANCH"
+
+# Make sure we see REMOTE_BRANCH
+BRANCH_EXIST=$( branch_exist "$REMOTE_BRANCH" )
+
+if [ "$BRANCH_EXIST" == "false" ]; then
+    msg_error "Error: Branch doesn't exist: '$REMOTE_BRANCH'"
+    msg_info "If it's a remote branch that doesn't exist locally execute\n git fetch <remote> <srcBranch>:<dstBranch>\n git fetch origin $REMOTE_BRANCH:$REMOTE_BRANCH"
+    exit 128
+else
+    debug_msg "Branch exist: '$REMOTE_BRANCH'"
+fi
+
+### Handle modified files
+debug_msg "Handling files already known to Git"
+for FILE in $( git ls-files -m ); do
+	handle_file "${FILE}"
+done
+
+# Untracked files
+debug_msg "Handling untracked files"
+for FILE in $( git ls-files --others --exclude-standard ); do
+        handle_file "${FILE}" "untracked"
+done
