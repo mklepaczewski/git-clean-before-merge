@@ -87,7 +87,14 @@ function handle_file() {
 		    revert_file "${FILE}"
 		fi
 	else
-		warn_hash_differ "${FILE}" "${FILE_HASH}" "${REMOTE_FILE_HASH}"
+	  # If the modified file had hash X before modification and its hash in REMOTE_BRANCH_FILE is also X we can skip it
+	  local LOCAL_BRANCH_FILE="${LOCAL_BRANCH}:${FILE}"
+	  local LOCAL_COMMIT_FILE_HASH=$( git rev-parse "${LOCAL_BRANCH_FILE}" 2>/dev/null)
+	  # We can skip reporting the file if current branch hash and remote branch hash are the same
+	  if [ "${LOCAL_COMMIT_FILE_HASH}" != "${REMOTE_FILE_HASH}" ]; then
+	    # The file has been modified in upstream and the hashes don't much - definietely something we need to know about
+		  warn_hash_differ "${FILE}" "${FILE_HASH}" "${REMOTE_FILE_HASH}"
+		fi
 	fi
 }
 
