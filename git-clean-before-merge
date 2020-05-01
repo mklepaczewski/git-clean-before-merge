@@ -22,7 +22,6 @@
 #   should be safe to use the most recent version of the file
 #   Also, if it has been removed then:
 #   - revert it to original state (git checkout the_file) if it's a tracked file
-#   - remove the file if it's an untracked file
 # - rename debug_msg() to msg_debug()
 
 # Default options
@@ -230,12 +229,12 @@ fi
 
 ### Handle modified files
 debug_msg "Handling files already known to Git"
-for FILE in $( git ls-files -m ); do
+while IFS= read -r -d '' FILE; do
 	handle_file "${FILE}"
-done
+done < <( git ls-files -z -m )
 
 # Untracked files
 debug_msg "Handling untracked files"
-for FILE in $( git ls-files --others --exclude-standard ); do
+while IFS= read -r -d '' FILE; do
         handle_file "${FILE}" "untracked"
-done
+done < <( git ls-files -z --others --exclude-standard )
