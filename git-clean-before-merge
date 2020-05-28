@@ -205,11 +205,13 @@ debug_msg "Local branch: '$LOCAL_BRANCH'"
 
 if [ -z "$OPT_BRANCH" ]; then
     debug_msg "Detecting branch name as it hasn't been provided on cmd line"
-    REMOTE_NAME=$( git remote show )
-    debug_msg "REMOTE_NAME: $REMOTE_NAME"
-
-    # Todo: this is not always true!
-    REMOTE_BRANCH="${REMOTE_NAME}/${LOCAL_BRANCH}"
+    REMOTE_BRANCH=$( git for-each-ref --format='%(upstream:short)' "$(git symbolic-ref -q HEAD)" )
+    # Handle the case when there's no tracking branch
+    if [ -z "$REMOTE_BRANCH" ]; then
+      msg_error "Tracking branch doesn't exist? - can't continue. Provide branch name explicitly on command line"
+      exit 128
+    fi
+    debug_msg "Detected REMOTE_BRANCH: $REMOTE_BRANCH"
 else
     REMOTE_BRANCH="$OPT_BRANCH"
 fi
