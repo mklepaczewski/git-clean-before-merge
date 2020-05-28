@@ -135,7 +135,6 @@ It'll revert `a.txt` and remove `b.txt` so that `git merge dev` can continue.
  - error and sanity checks,
  - don't rely on bash
  - make sure that all commands that are going to be used do exist (git)
- - correctly infer remote tracking branch if no branch has been given on command line
  - instead of checking if modified/untracked file is the same as on the tip of the merge branch
    check if it exists in any of commits between our local commit and the tip of the merge branch.
    If it exists in any of those commits then most probably we can discard our local changes, as
