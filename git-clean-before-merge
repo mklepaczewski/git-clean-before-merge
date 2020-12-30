@@ -106,6 +106,12 @@ function handle_file() {
 		return
 	fi
 
+	# Make sure local file exists
+	if [ ! -e "${FILE}" ]; then
+	  msg_info "Local file doesn't exist, skipping: '${FILE}'"
+	  return
+  fi
+
 	local FILE_HASH=$( git hash-object "${FILE}" )
 	
 	if [ "${FILE_HASH}" == "${REMOTE_FILE_HASH}" ]; then
